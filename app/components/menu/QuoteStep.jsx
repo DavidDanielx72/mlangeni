@@ -15,12 +15,14 @@ import BookingSuccessModal from "@/app/components/dashboard/customer/BookingSucc
 import { sendQuoteEmail } from "@/services/quoteEmailService";
 import { useMenu } from "./MenuContext";
 import { rowDisplayName } from "./constants";
-import { computeTotals, courseGroups, formatZAR, guestCount } from "./pricing";
-import { formatDateLong, formatRangeLabel, toDateKey } from "./availability";
-import { submitMenuEnquiry } from "./submitQuote";
-import { validateEventDetails } from "./validation";
-
-const EVENT_DETAILS_STEP = 4;
+import { Info } from "lucide-react";
+import {
+  getActiveBookingMessage,
+  getActiveCustomerBooking,
+  getAdvanceBookingMessage,
+  getMinimumEventDate,
+  isBeforeMinimumEventDate,
+} from "@/app/utils/customerBookingRules";
 
 export function QuoteStep() {
   const { state, dispatch } = useMenu();
@@ -64,14 +66,109 @@ export function QuoteStep() {
       return;
     }
 
+    const minimumEventDate = getMinimumEventDate();
+
+    if (isBeforeMinimumEventDate(state.eventDate, minimumEventDate)) {
+      setSendError(getAdvanceBookingMessage(minimumEventDate));
+      return;
+    }
+
     setSending(true);
     setSendError("");
 
     try {
-      const { enquiryId } = await submitMenuEnquiry(state);
+      let customerId = state.existingCustomer?.customer_id;
 
-      // The request is saved. Show success now — the email is a courtesy that
-      // must never gate or fail this.
+      if (!customerId) {
+        const fullName = state.contactName.trim();
+        const [first_name, ...rest] = fullName.split(/\s+/);
+        const last_name = rest.join(" ");
+
+        const { data: newCustomer, error: custErr } = await supabase
+          .from("customer")
+          .insert({
+            user_id: state.authUser.id,
+            email: state.authUser.email,
+            first_name: first_name || null,
+            last_name: last_name || null,
+            phone_number: state.contactPhone || null,
+          })
+          .select("customer_id")
+          .single();
+
+        if (custErr) throw new Error(custErr.message);
+        customerId = newCustomer.customer_id;
+      }
+
+      const blockingBooking = await getActiveCustomerBooking(
+        supabase,
+        customerId,
+      );
+
+      if (blockingBooking) {
+        throw new Error(getActiveBookingMessage(blockingBooking));
+      }
+
+      const total_price = allSelectedItems.reduce(
+        (sum, item) => sum + Number(item.price) * guests,
+        0,
+      );
+
+      const { data: order, error: orderErr } = await supabase
+        .from("orders")
+        .insert({
+          customer_id: customerId,
+          event_type_id: state.eventTypeId,
+          status: "pending",
+          total_price,
+          event_date: state.eventDate,
+          event_location: state.eventLocation,
+          start_time: state.startTime,
+          end_time: state.endTime,
+          number_of_guest: guests,
+        })
+        .select("order_id")
+        .single();
+
+      if (orderErr) {
+        if (orderErr.code === "23P01" || /overlap/i.test(orderErr.message)) {
+          throw new Error(
+            "This venue/time slot conflicts with an existing reservation.",
+          );
+        }
+        throw new Error(orderErr.message);
+      }
+
+      const cmiRows = allSelectedItems.map((it) => ({
+        order_id: order.order_id,
+        item_id: it.item_id,
+        quantity: guests,
+      }));
+
+      if (cmiRows.length > 0) {
+        const { error: cmiErr } = await supabase
+          .from("customer_menu_items")
+          .insert(cmiRows);
+
+        if (cmiErr) throw new Error(cmiErr.message);
+      }
+
+      const consultationNote =
+        state.notes?.trim() ||
+        "Customer submitted an order request and is awaiting admin consultation.";
+
+      const { error: consultationErr } = await supabase
+        .from("consultations")
+        .insert({
+          order_id: order.order_id,
+          customer_id: customerId,
+          status: "requested",
+          meeting_date: `${state.eventDate}T${state.startTime || "09:00"}:00`,
+          note: consultationNote,
+        });
+
+      if (consultationErr) throw new Error(consultationErr.message);
+
       setSuccessSummary(
         `Quote request #${enquiryId} submitted for ${eventTypeName} with ${guests} guest${guests === 1 ? "" : "s"}.`,
       );

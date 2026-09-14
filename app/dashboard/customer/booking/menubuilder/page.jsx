@@ -1,13 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useReducer } from "react";
+import Link from "next/link";
 import { supabase } from "@/services/supabaseClient";
 import { groupMenuItems } from "@/app/components/menu/constants";
 import { MenuProvider, useMenu } from "@/app/components/menu/MenuContext";
 import { ProgressBar } from "@/app/components/menu/ProgressBar";
 import { CartSidebar } from "@/app/components/menu/CartSidebar";
 import { StepRouter } from "@/app/components/menu/StepRouter";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertCircle, UtensilsCrossed, RefreshCw } from "lucide-react";
+import {
+  getActiveBookingMessage,
+  getActiveCustomerBooking,
+} from "@/app/utils/customerBookingRules";
 
 export default function MenuBuilderPage() {
   return (
@@ -21,10 +26,12 @@ function MenuBuilder() {
   const { state, dispatch } = useMenu();
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuError, setMenuError] = useState("");
+  const [activeBooking, setActiveBooking] = useState(null);
 
   const loadAll = useCallback(async () => {
     setMenuLoading(true);
     setMenuError("");
+    setActiveBooking(null);
 
     try {
       const {
@@ -63,6 +70,13 @@ function MenuBuilder() {
 
       if (customerRes.data) {
         dispatch({ type: "SET_EXISTING_CUSTOMER", payload: customerRes.data });
+
+        const booking = await getActiveCustomerBooking(
+          supabase,
+          customerRes.data.customer_id,
+        );
+
+        setActiveBooking(booking);
       }
 
       dispatch({ type: "SET_EVENT_TYPES", payload: eventTypesRes.data || [] });
@@ -89,11 +103,14 @@ function MenuBuilder() {
   }, [dispatch]);
 
   useEffect(() => {
-    // Initial data fetch; the setState inside is the result of the request,
-    // not state derivable during render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadAll();
-  }, [loadAll]);
+    const loadTimer = window.setTimeout(() => {
+      loadAll();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(loadTimer);
+    };
+  }, []);
 
   return (
     <main className="bg-mgh-bg px-6 py-10 text-mgh-text md:px-10 lg:px-14">
@@ -142,12 +159,30 @@ function MenuBuilder() {
               </div>
               <CartSidebar />
             </div>
-          </>
-        )}
-      </section>
-    </main>
-  );
-}
+          )}
+
+          {!menuLoading && !menuError && activeBooking && (
+            <div className="my-10 border border-white/10 bg-white/[0.03] p-8 text-center backdrop-blur-md">
+              <AlertCircle className="mx-auto text-[#D4AF37]" size={32} />
+              <h2 className="mt-5 font-serif text-3xl font-medium text-white">
+                Active Booking In Progress
+              </h2>
+              <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-[#A0A0A0] md:text-base">
+                {getActiveBookingMessage(activeBooking)}
+              </p>
+              <Link
+                href="/dashboard/customer/orders"
+                className="mt-7 inline-flex h-11 items-center justify-center rounded-lg border border-[#D4AF37]/40 px-5 text-sm font-semibold text-[#D4AF37] transition hover:border-[#D4AF37] hover:bg-[#D4AF37] hover:text-black"
+              >
+                View My Bookings
+              </Link>
+            </div>
+          )}
+
+          {/* ACTIVE BUILDER INTERFACE */}
+          {!menuLoading && !menuError && !activeBooking && state.menu && (
+            <>
+              <ProgressBar />
 
 /** Card-shaped placeholders, so the layout doesn't jump when the menu lands. */
 function MenuSkeleton() {

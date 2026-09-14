@@ -5,80 +5,33 @@ import { startOfDay, startOfMonth } from "date-fns";
 import { CalendarClock, MapPin, Users } from "lucide-react";
 import { useMenu } from "./MenuContext";
 import { rowDisplayName } from "./constants";
-import { findConflicts, isDayFull } from "./availability";
-import { useAvailability, rangesForDate } from "./useAvailability";
-import { DateField } from "./DateField";
-import { AvailabilityPanel } from "./AvailabilityPanel";
 import {
-  ReadOnlyField,
-  SelectField,
-  TextAreaField,
-  TextField,
-  TimeField,
-} from "./fields";
-import {
-  GUEST_MAX,
-  NOTES_MAX,
-  firstInvalidField,
-  maxBookingDate,
-  validateEventDetails,
-} from "./validation";
+  getAdvanceBookingMessage,
+  getMinimumEventDate,
+  getMinimumEventDateInputValue,
+  isBeforeMinimumEventDate,
+} from "@/app/utils/customerBookingRules";
 
 export function EventDetailsStep() {
   const { state, dispatch } = useMenu();
 
   const [errors, setErrors] = useState({});
-  const [touched, setTouched] = useState({});
+  const minimumEventDate = getMinimumEventDate();
+  const minimumEventDateInput = getMinimumEventDateInputValue();
 
-  const today = useMemo(() => startOfDay(new Date()), []);
-  const [calendarMonth, setCalendarMonth] = useState(() =>
-    startOfMonth(state.eventDate ?? today),
-  );
-
-  const { byDate, loading, error, unsupported, refresh } = useAvailability({
-    month: calendarMonth,
-  });
-
-  // Days the calendar annotates. Both stay empty when the lookup is
-  // unavailable, so nothing gets disabled on the strength of missing data.
-  const { busyDates, fullDates } = useMemo(() => {
-    const busy = new Set();
-    const full = new Set();
-    if (!unsupported) {
-      for (const [key, ranges] of byDate.entries()) {
-        if (!ranges?.length) continue;
-        busy.add(key);
-        if (isDayFull(ranges)) full.add(key);
-      }
-    }
-    return { busyDates: busy, fullDates: full };
-  }, [byDate, unsupported]);
-
-  const dayRanges = useMemo(
-    () => (unsupported ? [] : rangesForDate(byDate, state.eventDate)),
-    [byDate, state.eventDate, unsupported],
-  );
-
-  // Recomputed on every keystroke of the time fields — this is what makes a
-  // clash visible before submit rather than after.
-  const conflicts = useMemo(() => {
-    if (unsupported || !state.eventDate) return [];
-    return findConflicts(dayRanges, state.startTime, state.endTime);
-  }, [dayRanges, state.startTime, state.endTime, state.eventDate, unsupported]);
-
-  const ctx = { conflicts, today };
-
-  /** Revalidate a field only once the customer has already left it. */
-  const revalidate = (nextState, alsoTouch) => {
-    const all = validateEventDetails(nextState, ctx);
-    setErrors((prev) => {
-      const next = {};
-      for (const key of Object.keys({ ...prev, ...all })) {
-        const isTouched = touched[key] || key === alsoTouch;
-        if (isTouched && all[key]) next[key] = all[key];
-      }
-      return next;
-    });
+  const validate = () => {
+    const e = {};
+    if (!state.guests || parseInt(state.guests) < 1)
+      e.guests = "Please enter guest count";
+    if (!state.eventDate) e.eventDate = "Please select an event date";
+    else if (isBeforeMinimumEventDate(state.eventDate, minimumEventDate))
+      e.eventDate = getAdvanceBookingMessage(minimumEventDate);
+    if (!state.eventTypeId) e.eventTypeId = "Please select event type";
+    if (!state.eventLocation.trim())
+      e.eventLocation = "Please enter venue location";
+    if (state.endTime <= state.startTime)
+      e.endTime = "End time must be after start time";
+    return e;
   };
 
   const set = (type, payload, field) => {
@@ -178,80 +131,17 @@ export function EventDetailsStep() {
           </div>
         </fieldset>
 
-        {/* ── Date & time, with live availability ──────────────────── */}
-        <fieldset className={card}>
-          <Legend icon={CalendarClock}>Date &amp; Time</Legend>
-
-          <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="space-y-6">
-              <DateField
-                id="eventDate"
-                label="Event Date"
-                required
-                value={state.eventDate}
-                month={calendarMonth}
-                onMonthChange={setCalendarMonth}
-                minDate={today}
-                maxDate={maxBookingDate(today)}
-                busyDates={busyDates}
-                fullDates={fullDates}
-                error={errors.eventDate}
-                hint={
-                  !unsupported && busyDates.size > 0
-                    ? "Dots mark dates with an existing booking."
-                    : undefined
-                }
-                onChange={(date) => {
-                  dispatch({ type: "SET_DATE", payload: date });
-                  setTouched((p) => ({ ...p, eventDate: true }));
-                  revalidate({ ...state, eventDate: date }, "eventDate");
-                  if (date) setCalendarMonth(startOfMonth(date));
-                }}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <TimeField
-                  id="startTime"
-                  label="Start Time"
-                  required
-                  value={state.startTime}
-                  error={errors.startTime}
-                  onBlur={() => handleBlur("startTime")}
-                  onChange={(e) =>
-                    set("SET_START_TIME", e.target.value, "startTime")
-                  }
-                />
-                <TimeField
-                  id="endTime"
-                  label="End Time"
-                  required
-                  value={state.endTime}
-                  error={errors.endTime}
-                  onBlur={() => handleBlur("endTime")}
-                  onChange={(e) =>
-                    set("SET_END_TIME", e.target.value, "endTime")
-                  }
-                />
-              </div>
-            </div>
-
-            <AvailabilityPanel
-              date={state.eventDate}
-              ranges={dayRanges}
-              loading={loading}
-              unsupported={unsupported}
-              error={error}
-              startTime={state.startTime}
-              endTime={state.endTime}
-              onRefresh={refresh}
-              onPickWindow={(gap) => {
-                dispatch({ type: "SET_START_TIME", payload: gap.start });
-                dispatch({ type: "SET_END_TIME", payload: gap.end });
-                revalidate({
-                  ...state,
-                  startTime: gap.start,
-                  endTime: gap.end,
-                });
+          <div>
+            <label className="mb-2 block text-xs uppercase tracking-wider text-[#A0A0A0]">
+              Event Date *
+            </label>
+            <input
+              type="date"
+              min={minimumEventDateInput}
+              value={state.eventDate}
+              onChange={(e) => {
+                dispatch({ type: "SET_DATE", payload: e.target.value });
+                setErrors((p) => ({ ...p, eventDate: "" }));
               }}
             />
           </div>
