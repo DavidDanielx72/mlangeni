@@ -15,7 +15,13 @@ const statusConfig = {
 
 const options = ["pending", "confirmed", "cancelled"];
 
-export default function StatusDropdown({ value, onChange, disabled }) {
+export default function StatusDropdown({
+  value,
+  onChange,
+  disabled,
+  /** A menu-builder request: confirming it materialises an order. */
+  isMenuBuilder = false,
+}) {
   const [open, setOpen] = useState(false);
   const [pendingValue, setPendingValue] = useState(null); // value awaiting confirmation
   const [saving, setSaving] = useState(false);
@@ -90,8 +96,9 @@ export default function StatusDropdown({ value, onChange, disabled }) {
             className="w-full max-w-sm rounded-xl border border-[#2A2A2A] bg-[#0B0A09] p-6 shadow-2xl"
           >
             <p className="text-sm text-white">
-              Confirming this enquiry will mark that date and session as
-              unavailable for everyone else. Continue?
+              {isMenuBuilder
+                ? "Confirming this creates the booking: the customer's menu becomes a real order, and that date and time window is locked for everyone else. Continue?"
+                : "Confirming this enquiry will mark that date and session as unavailable for everyone else. Continue?"}
             </p>
 
             <div className="mt-5 flex justify-end gap-3">

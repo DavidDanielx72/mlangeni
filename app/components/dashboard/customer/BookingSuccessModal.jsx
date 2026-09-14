@@ -8,6 +8,16 @@ export default function BookingSuccessModal({
   title,
   message,
   orderLabel = "Your order has been placed successfully.",
+  /** Secondary line for caveats — e.g. a confirmation email that didn't send. */
+  note,
+  /**
+   * The three below default to the package-booking wording, which places a
+   * confirmed order outright. The menu builder overrides them because it
+   * submits a request for approval, not a booking — saying "Booking complete"
+   * there would promise something the customer has not actually got yet.
+   */
+  eyebrow = "Booking complete",
+  ctaLabel = "View orders",
   dashboardHref = "/dashboard/customer",
   ordersHref = "/dashboard/customer/orders",
   onClose,
@@ -38,7 +48,7 @@ export default function BookingSuccessModal({
 
             <div className="min-w-0 pr-10">
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#D4AF37]">
-                Booking complete
+                {eyebrow}
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
                 {title}
@@ -52,6 +62,12 @@ export default function BookingSuccessModal({
           <div className="mt-6 rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-4 text-sm text-[#E8D08E]">
             {orderLabel}
           </div>
+
+          {note && (
+            <p className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-[#A0A0A0]">
+              {note}
+            </p>
+          )}
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <Link
@@ -67,7 +83,7 @@ export default function BookingSuccessModal({
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37] px-4 py-3 text-sm font-semibold text-black transition hover:bg-[#e3bf52]"
             >
               <ClipboardList size={16} />
-              View orders
+              {ctaLabel}
             </Link>
           </div>
 
