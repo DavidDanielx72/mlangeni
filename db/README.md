@@ -10,6 +10,11 @@ Regenerate it whenever the schema changes — ask Claude Code
 ("regenerate db/schema.sql from the live database"), since the Supabase MCP
 server is already configured in `.mcp.json`.
 
+It is **stale as of 006**: that migration adds the `enquiry_menu_items` table,
+seven columns to `enquiries` and four functions, and it fixes known issue (a)
+in section 8 — the world-readable `enquiries` policy. Regenerate after running
+it.
+
 ## Migrations
 
 These are SQL files for the hosted Supabase project. Run them in numerical
@@ -25,10 +30,12 @@ Every file is safe to re-run.
 | `002_get_booked_slots.sql` | `get_booked_slots(from, to)` — the availability lookup that powers the date picker | Menu builder date step |
 | `003_create_menu_order.sql` | `create_menu_order(...)` — writes the order and its line items in one transaction | Menu builder submit (optional) |
 | `004_lock_down_function_grants.sql` | Revokes the default `PUBLIC` EXECUTE grant from the `SECURITY DEFINER` functions, and pins `set_updated_at`'s `search_path` | Security — **not** optional |
+| `005_testimonials_curation.sql` | Ties a review to the event it is about, adds the admin's `featured` / `display_order` controls, splits the SELECT policy by role, and adds `get_public_testimonials()` so anonymous visitors can see reviewers' names without the `customer` table being readable | Testimonials — customer submission, admin moderation, homepage carousel |
+| `006_menu_builder_enquiries.sql` | Routes the Interactive Menu Builder through the enquiry approval process instead of writing orders directly. Widens `enquiries`, adds `enquiry_menu_items`, `create_menu_enquiry()`, `set_enquiry_status()` and `get_booked_sessions()`, and closes the world-readable `enquiries` policy | Menu builder submit, admin approval — **not** optional |
 
 ## The app works without these
 
-001, 002 and 003 are **optional**. 004 is not — see below. The menu builder detects a missing function or
+001, 002, 003 and 005 are **optional**. 004 and 006 are not — see below. The menu builder detects a missing function or
 column and degrades:
 
 - No `get_booked_slots` → the availability panel shows a neutral "live
@@ -39,8 +46,13 @@ column and degrades:
   compensating delete if the second one fails.
 - No `special_requests` column → the insert is retried once without it and the
   note is dropped, with a console warning.
+- No `get_public_testimonials` → the homepage testimonial section and the
+  dashboard review card hide themselves rather than erroring, and the customer
+  "Leave a review" page explains that reviews are not connected yet. Nothing
+  on the marketing site renders a broken or empty block.
 
-Running them turns on early conflict warnings, atomic writes, and note storage.
+Running them turns on early conflict warnings, atomic writes, note storage, and
+customer reviews.
 
 ## 004 is a security fix, not a feature
 
@@ -80,6 +92,64 @@ order by p.proname;
 
 A bare `=X/postgres` entry in `proacl` **is** the `PUBLIC` grant. After 004 the
 only function that should still show one is `is_admin`.
+
+## 006 changes what `orders` means
+
+Before 006 the menu builder inserted straight into `orders`. That made a
+request indistinguishable from a booking: the row immediately held the slot
+through the `orders_no_overlap` exclusion constraint, showed up on the
+customer's Orders page, and was eligible for a consultation — all before a
+human had read it. The admin Enquiries screen, which is where the approval
+process actually lives, never saw it at all.
+
+After 006, `orders` means **approved booking** and nothing else:
+
+```
+menu builder
+   └─> enquiries (pending) + enquiry_menu_items
+          │
+     admin confirms  ->  set_enquiry_status(id, 'confirmed')
+          │
+          └─> orders (confirmed) + customer_menu_items
+                 └─> consultations -> invoices
+                 └─> orders_no_overlap now applies
+```
+
+Two consequences worth knowing before you debug something:
+
+- **Two customers can request the same slot.** The exclusion constraint only
+  gets a say at approval, so the *second approval* is what fails, with 23P01.
+  That is deliberate: which request wins is an admin's decision, not the
+  outcome of a race between two customers. The admin UI surfaces the clash.
+- **`get_booked_slots` (002) now reports confirmed bookings only**, because
+  pending requests are no longer orders. The menu builder's availability panel
+  is correspondingly less conservative — it warns about locked slots, not
+  about other people's outstanding requests.
+
+`create_menu_order` (003) is left installed so an older client bundle still
+works, but nothing in the app calls it any more.
+
+### Why 006 is not optional
+
+It closes known issue (a) from `schema.sql` section 8: the policy "Allow public
+read on enquiries" is granted to `PUBLIC` with `USING (true)`, and because
+permissive policies are OR'd it defeats both narrow policies on the table —
+every lead's name, email, phone and message was readable with the publishable
+key. 006 adds venue address, price and `customer_id` to that same table, so
+shipping the two halves separately would mean publishing those too.
+
+The policy only survived this long because three components read `session` off
+it to work out availability. `get_booked_sessions(date)` gives them exactly
+that and nothing else, so all three now call the RPC:
+
+- `app/sections/EnquiryForm.jsx`
+- `app/components/contact/SessionDropDown.jsx`
+- `app/components/dashboard/customer/enquiry/EnquiryContent.jsx`
+
+The third one matters most: it runs as a signed-in customer, and availability
+depends on *other* customers' confirmed enquiries. Without the RPC it would
+report every date as free rather than erroring, which is the kind of bug that
+takes a double-booking to notice.
 
 ## Migration history
 

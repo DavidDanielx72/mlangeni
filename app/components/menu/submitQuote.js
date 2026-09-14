@@ -1,14 +1,22 @@
 /**
  * Writing a menu-builder quote to the database.
  *
+ * This writes an ENQUIRY, not an order. The menu builder used to insert
+ * straight into `orders`, which meant a request became a booking the moment it
+ * was submitted — it locked the slot through the orders_no_overlap constraint,
+ * appeared on the customer's Orders page as a real booking, and never reached
+ * the admin Enquiries screen where the approval process actually lives. An
+ * order is now created by `set_enquiry_status` when an admin confirms. See
+ * db/006_menu_builder_enquiries.sql.
+ *
  * Extracted from QuoteStep so the submit sequence can be read (and reasoned
  * about) without the JSX around it. Three failure modes are handled here that
  * the old inline version got wrong:
  *
- *  1. The line-item insert failing after the order insert succeeded, leaving an
- *     order with no food in it. Preferably avoided by the create_menu_order
- *     RPC; otherwise compensated for with a delete.
- *  2. `number_of_guest` and `special_requests` never being written at all.
+ *  1. The line-item insert failing after the parent insert succeeded, leaving
+ *     a request with no food in it. Preferably avoided by the
+ *     create_menu_enquiry RPC; otherwise compensated for with a delete.
+ *  2. `guests` and the customer's notes never being written at all.
  *  3. An existing customer's edited name or phone never being saved.
  *
  * Everything degrades if `db/00*.sql` hasn't been run.
@@ -18,12 +26,12 @@ import { supabase } from "@/services/supabaseClient";
 import { computeTotals, guestCount, lineItems } from "./pricing";
 import { toDateKey } from "./availability";
 
-export class MenuOrderError extends Error {
-  constructor(message, { code, orphanOrderId } = {}) {
+export class MenuEnquiryError extends Error {
+  constructor(message, { code, orphanEnquiryId } = {}) {
     super(message);
-    this.name = "MenuOrderError";
+    this.name = "MenuEnquiryError";
     this.code = code;
-    this.orphanOrderId = orphanOrderId;
+    this.orphanEnquiryId = orphanEnquiryId;
   }
 }
 
@@ -38,22 +46,16 @@ const isMissingColumn = (e, column) =>
   (String(e.code) === "PGRST204" || String(e.code) === "42703") &&
   String(e.message ?? "").includes(column);
 
-function mapOrderError(err) {
-  if (!err) return new MenuOrderError("An unexpected error occurred.");
+function mapEnquiryError(err) {
+  if (!err) return new MenuEnquiryError("An unexpected error occurred.");
 
-  if (String(err.code) === "23P01" || /overlap|exclusion/i.test(err.message ?? "")) {
-    return new MenuOrderError(
-      "That date and time window has just been booked by someone else. Please choose another slot.",
-      { code: "23P01" },
-    );
-  }
   if (String(err.code) === "23503") {
-    return new MenuOrderError(
+    return new MenuEnquiryError(
       "Something in your selection is no longer available. Please review your menu.",
       { code: err.code },
     );
   }
-  return new MenuOrderError(err.message || "An unexpected error occurred.", {
+  return new MenuEnquiryError(err.message || "An unexpected error occurred.", {
     code: err.code,
   });
 }
@@ -61,6 +63,28 @@ function mapOrderError(err) {
 function splitName(fullName) {
   const [first, ...rest] = String(fullName ?? "").trim().split(/\s+/);
   return { first_name: first || null, last_name: rest.join(" ") || null };
+}
+
+/**
+ * Which session label this time window falls into.
+ *
+ * Mirrors public.derive_session in db/006 — the database is the authority (it
+ * computes the stored value), this copy only exists so the UI can say which
+ * session a request will occupy without a round trip. Keep the two in step.
+ */
+export function deriveSession(startTime, endTime) {
+  const mins = (t) => {
+    const m = String(t ?? "").match(/^(\d{1,2}):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const start = mins(startTime);
+  const end = mins(endTime);
+
+  if (start === null) return "full_day";
+  if (end !== null && end - start >= 8 * 60) return "full_day";
+  if (start < 12 * 60) return "morning";
+  if (start < 17 * 60) return "afternoon";
+  return "evening";
 }
 
 /** Create the customer row if it's missing, or push through any edits. */
@@ -100,28 +124,31 @@ async function ensureCustomer(state) {
     .select("customer_id")
     .single();
 
-  if (error) throw mapOrderError(error);
+  if (error) throw mapEnquiryError(error);
   return data.customer_id;
 }
 
 /** Atomic path — one transaction. Returns null if the RPC isn't installed. */
 async function tryCreateViaRpc(payload) {
-  const { data, error } = await supabase.rpc("create_menu_order", {
+  const { data, error } = await supabase.rpc("create_menu_enquiry", {
     p_customer_id: payload.customerId,
     p_event_type_id: payload.eventTypeId,
+    p_name: payload.contactName,
+    p_email: payload.contactEmail,
+    p_phone: payload.contactPhone,
     p_event_date: payload.eventDate,
     p_start_time: payload.startTime,
     p_end_time: payload.endTime,
     p_location: payload.location,
     p_guests: payload.guests,
     p_total_price: payload.totalPrice,
-    p_special_requests: payload.notes,
+    p_message: payload.notes,
     p_items: payload.items.map((item_id) => ({ item_id })),
   });
 
   if (error) {
     if (isMissingFunction(error)) return null;
-    throw mapOrderError(error);
+    throw mapEnquiryError(error);
   }
   return data;
 }
@@ -129,79 +156,81 @@ async function tryCreateViaRpc(payload) {
 /** Fallback path — two inserts, with a compensating delete if the second fails. */
 async function createViaInserts(payload) {
   const row = {
+    source: "menu_builder",
+    user_id: payload.userId,
     customer_id: payload.customerId,
     event_type_id: payload.eventTypeId,
-    status: "pending",
-    total_price: payload.totalPrice,
+    name: payload.contactName,
+    email: payload.contactEmail,
+    phone: payload.contactPhone,
     event_date: payload.eventDate,
-    event_location: payload.location,
     start_time: payload.startTime,
     end_time: payload.endTime,
-    number_of_guest: payload.guests,
-    special_requests: payload.notes,
+    session: deriveSession(payload.startTime, payload.endTime),
+    event_location: payload.location,
+    guests: payload.guests,
+    total_price: payload.totalPrice,
+    message: payload.notes,
+    status: "pending",
   };
 
-  let { data: order, error } = await supabase
-    .from("orders")
+  const { data: enquiry, error } = await supabase
+    .from("enquiries")
     .insert(row)
-    .select("order_id")
+    .select("id")
     .single();
 
-  // db/001 hasn't been run: retry without the column rather than failing.
-  if (isMissingColumn(error, "special_requests")) {
-    console.warn(
-      "[menu] orders.special_requests is missing — the customer's notes were " +
-        "not saved. Run db/001_orders_special_requests.sql.",
+  // db/006 hasn't been run: the enquiry table can't hold a menu at all, so
+  // there is nothing useful to degrade to. Say so rather than silently
+  // dropping the customer's selections.
+  if (isMissingColumn(error, "source") || isMissingColumn(error, "total_price")) {
+    throw new MenuEnquiryError(
+      "Menu requests aren't set up on this environment yet. Please contact us " +
+        "directly and we'll take your booking. (Run db/006_menu_builder_enquiries.sql.)",
+      { code: error.code },
     );
-    const withoutNotes = { ...row };
-    delete withoutNotes.special_requests;
-    ({ data: order, error } = await supabase
-      .from("orders")
-      .insert(withoutNotes)
-      .select("order_id")
-      .single());
   }
 
-  if (error) throw mapOrderError(error);
+  if (error) throw mapEnquiryError(error);
 
   const itemRows = payload.items.map((item_id) => ({
-    order_id: order.order_id,
+    enquiry_id: enquiry.id,
     item_id,
     quantity: payload.guests,
   }));
 
   if (itemRows.length > 0) {
     const { error: itemsErr } = await supabase
-      .from("customer_menu_items")
+      .from("enquiry_menu_items")
       .insert(itemRows);
 
     if (itemsErr) {
       const { error: cleanupErr } = await supabase
-        .from("orders")
+        .from("enquiries")
         .delete()
-        .eq("order_id", order.order_id);
+        .eq("id", enquiry.id);
 
       if (cleanupErr) {
-        throw new MenuOrderError(
+        throw new MenuEnquiryError(
           `Your request was received but the menu items didn't save. ` +
-            `Please quote reference #${order.order_id} when you contact us.`,
-          { code: itemsErr.code, orphanOrderId: order.order_id },
+            `Please quote reference #${enquiry.id} when you contact us.`,
+          { code: itemsErr.code, orphanEnquiryId: enquiry.id },
         );
       }
-      throw mapOrderError(itemsErr);
+      throw mapEnquiryError(itemsErr);
     }
   }
 
-  return order.order_id;
+  return enquiry.id;
 }
 
 /**
- * @returns {Promise<{ orderId, customerId, totals, items }>}
- * @throws {MenuOrderError}
+ * @returns {Promise<{ enquiryId, customerId, totals, items }>}
+ * @throws {MenuEnquiryError}
  */
-export async function submitMenuOrder(state) {
+export async function submitMenuEnquiry(state) {
   if (!state.authUser?.id) {
-    throw new MenuOrderError("You need to be signed in to submit a request.");
+    throw new MenuEnquiryError("You need to be signed in to submit a request.");
   }
 
   const guests = guestCount(state.guests);
@@ -211,8 +240,12 @@ export async function submitMenuOrder(state) {
   const customerId = await ensureCustomer(state);
 
   const payload = {
+    userId: state.authUser.id,
     customerId,
     eventTypeId: state.eventTypeId,
+    contactName: state.contactName?.trim() || null,
+    contactEmail: (state.contactEmail || state.authUser.email)?.trim() || null,
+    contactPhone: state.contactPhone?.trim() || null,
     eventDate: toDateKey(state.eventDate),
     startTime: state.startTime,
     endTime: state.endTime,
@@ -224,7 +257,7 @@ export async function submitMenuOrder(state) {
   };
 
   const viaRpc = await tryCreateViaRpc(payload);
-  const orderId = viaRpc ?? (await createViaInserts(payload));
+  const enquiryId = viaRpc ?? (await createViaInserts(payload));
 
-  return { orderId, customerId, totals, items };
+  return { enquiryId, customerId, totals, items };
 }

@@ -98,11 +98,12 @@ export default function EnquiryForm() {
       return;
     }
     const fetchBooked = async () => {
-      const { data } = await supabase
-        .from("enquiries")
-        .select("session")
-        .eq("event_date", formData.eventDate)
-        .eq("status", "confirmed");
+      // db/006 dropped the blanket public read on `enquiries` — it exposed
+      // every lead's name, email and phone to anyone. This RPC returns the
+      // booked session labels and nothing else.
+      const { data } = await supabase.rpc("get_booked_sessions", {
+        p_date: formData.eventDate,
+      });
       setBookedSessions((data ?? []).map((r) => normalizeSession(r.session)));
     };
     fetchBooked();

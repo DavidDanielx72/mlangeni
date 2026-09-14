@@ -31,6 +31,13 @@
 -- Generated: 2026-09-07
 -- Project:   hzifwowfenglxigvpalb
 --
+-- ⚠ OUT OF DATE: db/005_testimonials_curation.sql was written after this
+-- snapshot and is NOT reflected below. Everything this file says about
+-- `testimonials` — its columns in section 3, its indexes in section 5 and its
+-- five policies in section 7 — describes the state before 005. Once 005 has
+-- been run against the live database, regenerate this file and delete this
+-- notice. Until then, read 005 alongside it.
+--
 -- =============================================================================
 
 

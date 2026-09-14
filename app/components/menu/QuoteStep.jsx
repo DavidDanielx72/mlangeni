@@ -17,7 +17,7 @@ import { useMenu } from "./MenuContext";
 import { rowDisplayName } from "./constants";
 import { computeTotals, courseGroups, formatZAR, guestCount } from "./pricing";
 import { formatDateLong, formatRangeLabel, toDateKey } from "./availability";
-import { submitMenuOrder } from "./submitQuote";
+import { submitMenuEnquiry } from "./submitQuote";
 import { validateEventDetails } from "./validation";
 
 const EVENT_DETAILS_STEP = 4;
@@ -68,18 +68,18 @@ export function QuoteStep() {
     setSendError("");
 
     try {
-      const { orderId } = await submitMenuOrder(state);
+      const { enquiryId } = await submitMenuEnquiry(state);
 
-      // The booking is saved. Show success now — the email is a courtesy that
+      // The request is saved. Show success now — the email is a courtesy that
       // must never gate or fail this.
       setSuccessSummary(
-        `Quote request #${orderId} submitted for ${eventTypeName} with ${guests} guest${guests === 1 ? "" : "s"}.`,
+        `Quote request #${enquiryId} submitted for ${eventTypeName} with ${guests} guest${guests === 1 ? "" : "s"}.`,
       );
       setShowSuccessModal(true);
       dispatch({ type: "SEND_QUOTE" });
 
       sendQuoteEmail({
-        orderId,
+        enquiryId,
         customer: {
           name: state.contactName.trim(),
           email: state.contactEmail || state.authUser?.email,
@@ -113,7 +113,7 @@ export function QuoteStep() {
           // inbox — delivered, but not to this customer.
           if (!result.ok || result.customer !== "sent") {
             setEmailNote(
-              "We couldn't email you a copy of this request, but it's safely in our system — you can view it any time under your orders.",
+              "We couldn't email you a copy of this request, but it's safely in our system — you can view it any time under your enquiries.",
             );
           }
         })
@@ -122,7 +122,6 @@ export function QuoteStep() {
         });
     } catch (err) {
       setSendError(err.message || "An unexpected error occurred.");
-      if (err.code === "23P01") goEditDetails();
     } finally {
       setSending(false);
     }
@@ -134,10 +133,15 @@ export function QuoteStep() {
     <form onSubmit={handleSubmit} noValidate>
       <BookingSuccessModal
         isOpen={showSuccessModal}
+        eyebrow="Request received"
         title="Your menu request is in"
-        message="Your custom booking has been submitted. You can return to the dashboard or jump straight to your orders page to review it again."
+        message="Your menu has been sent to our culinary directors for review. Once they approve it, it becomes a confirmed booking and appears under your orders."
         orderLabel={successSummary || "Your quote request has been sent."}
         note={emailNote || undefined}
+        // Not /orders — there is no order until an admin approves. This is the
+        // same destination the dashboard's Enquiries widget links to.
+        ordersHref="/dashboard/customer/enquiry"
+        ctaLabel="View my enquiries"
         onClose={() => {
           setShowSuccessModal(false);
           setEmailNote("");

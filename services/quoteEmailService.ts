@@ -3,13 +3,13 @@ import { supabase } from "@/services/supabaseClient";
 /**
  * Client wrapper for POST /api/quote-email.
  *
- * Never throws. A booking is already saved by the time this runs, so an email
- * problem must not surface as a failed booking — the caller gets a result
- * object and decides whether to mention it.
+ * Never throws. The enquiry is already saved by the time this runs, so an
+ * email problem must not surface as a failed submission — the caller gets a
+ * result object and decides whether to mention it.
  */
 
 export type QuoteEmailPayload = {
-  orderId: string | number;
+  enquiryId: string | number;
   customer: { name: string; email: string; phone?: string };
   event: {
     date: string;
