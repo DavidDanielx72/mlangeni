@@ -14,7 +14,9 @@ import {
   Phone, 
   Settings, 
   ChevronRight,
-  UserCircle2
+  UserCircle2,
+  X,
+  LockKeyhole
 } from "lucide-react";
 import { supabase } from "@/services/supabaseClient";
 import Footer from "@/app/components/Footer";
@@ -27,6 +29,7 @@ export default function AdminProfilePage() {
     lastName: "",
     email: "",
     phone: "",
+    companyAddress: "",
     createdAt: null,
   });
 
@@ -35,6 +38,20 @@ export default function AdminProfilePage() {
   const [profileError, setProfileError] = useState(null);
   const [profileSuccess, setProfileSuccess] = useState(null);
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // ── Address inline-edit state ─────────────────────────────
+  const addressInputRef = React.useRef(null);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressDraft, setAddressDraft] = useState("");
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [addressError, setAddressError] = useState(null);
+
+  // ── Change-password modal state ───────────────────────────
+  const [showPwModal, setShowPwModal] = useState(false);
+  const [pwForm, setPwForm] = useState({ newPassword: "", confirmPassword: "" });
+  const [pwError, setPwError] = useState(null);
+  const [pwSuccess, setPwSuccess] = useState(null);
+  const [savingPw, setSavingPw] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -72,6 +89,7 @@ export default function AdminProfilePage() {
         lastName: metadata.last_name ?? user.user_metadata?.lastName ?? "",
         email: user.email ?? "",
         phone: metadata.phone_number ?? user.user_metadata?.phoneNumber ?? "",
+        companyAddress: metadata.company_address ?? "4 Mauritius Street, Avondale, Parow, 7500",
         createdAt: user.created_at ?? null,
       });
       setLoadingProfile(false);
@@ -132,6 +150,93 @@ export default function AdminProfilePage() {
     }
 
     setProfileSuccess("Profile updated successfully.");
+  }
+
+  // ── Address handlers ──────────────────────────────────────
+  function startEditAddress() {
+    setAddressDraft(adminProfile.companyAddress);
+    setAddressError(null);
+    setEditingAddress(true);
+    setTimeout(() => addressInputRef.current?.focus(), 0);
+  }
+
+  function cancelEditAddress() {
+    setEditingAddress(false);
+    setAddressDraft("");
+    setAddressError(null);
+  }
+
+  async function saveAddress() {
+    setSavingAddress(true);
+    setAddressError(null);
+
+    const { error } = await supabase.auth.updateUser({
+      data: { company_address: addressDraft.trim() },
+    });
+
+    setSavingAddress(false);
+
+    if (error) {
+      setAddressError(error.message);
+      return;
+    }
+
+    setAdminProfile((prev) => ({ ...prev, companyAddress: addressDraft.trim() }));
+    setEditingAddress(false);
+    setAddressDraft("");
+  }
+
+  async function clearAddress() {
+    setSavingAddress(true);
+    setAddressError(null);
+
+    const { error } = await supabase.auth.updateUser({
+      data: { company_address: "" },
+    });
+
+    setSavingAddress(false);
+
+    if (error) {
+      setAddressError(error.message);
+      return;
+    }
+
+    setAdminProfile((prev) => ({ ...prev, companyAddress: "" }));
+    setEditingAddress(false);
+  }
+
+  async function handlePasswordChange(e) {
+    e.preventDefault();
+    setPwError(null);
+    setPwSuccess(null);
+
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwError("Passwords do not match.");
+      return;
+    }
+
+    if (pwForm.newPassword.length < 6) {
+      setPwError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setSavingPw(true);
+    const { error } = await supabase.auth.updateUser({
+      password: pwForm.newPassword,
+    });
+    setSavingPw(false);
+
+    if (error) {
+      setPwError(error.message);
+      return;
+    }
+
+    setPwSuccess("Password updated successfully.");
+    setTimeout(() => {
+      setShowPwModal(false);
+      setPwForm({ newPassword: "", confirmPassword: "" });
+      setPwSuccess(null);
+    }, 2000);
   }
 
   if (loadingProfile) {
@@ -344,45 +449,95 @@ export default function AdminProfilePage() {
         <section className="bg-[#121212] border border-[#222] rounded-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Saved Places</span>
-              <h3 className="text-xl font-serif text-white">Addresses</h3>
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Saved Place</span>
+              <h3 className="text-xl font-serif text-white">Company Address</h3>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[#d4af37]">
-              <MapPin className="w-4 h-4" />
-            </div>
+            {!editingAddress && (
+              <button
+                type="button"
+                onClick={startEditAddress}
+                aria-label="Edit address"
+                className="w-8 h-8 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[#d4af37] hover:bg-[#282828] transition-all"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          <div className="space-y-3">
+          {addressError && (
+            <p className="mb-3 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs text-red-400">
+              {addressError}
+            </p>
+          )}
+
+          {editingAddress ? (
+            <div className="space-y-3">
+              <div className="relative">
+                <MapPin className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#d4af37]" />
+                <input
+                  ref={addressInputRef}
+                  className="w-full bg-[#161616] border border-[#222] rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-[#d4af37]"
+                  type="text"
+                  placeholder="e.g. 4 Mauritius Street, Avondale, Parow, 7500"
+                  value={addressDraft}
+                  onChange={(e) => setAddressDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); saveAddress(); }
+                    if (e.key === "Escape") cancelEditAddress();
+                  }}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={saveAddress}
+                  disabled={savingAddress}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#d4af37] hover:bg-[#c4a133] text-black px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-70 shadow-lg shadow-[#d4af37]/10"
+                >
+                  {savingAddress ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEditAddress}
+                  disabled={savingAddress}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-[#222] bg-[#161616] hover:bg-[#282828] px-4 py-2.5 text-sm font-medium text-zinc-400 hover:text-white transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : adminProfile.companyAddress ? (
             <div className="bg-[#161616] border border-[#222] rounded-xl p-4 flex items-center justify-between hover:border-[#333] transition-all">
               <div>
-                <div className="text-sm font-semibold text-white">Home</div>
-                <div className="text-xs text-zinc-400 mt-0.5">12 Kloof St, Cape Town</div>
+                <div className="text-sm font-semibold text-white">Company Address</div>
+                <div className="text-xs text-zinc-400 mt-0.5">{adminProfile.companyAddress}</div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="p-2 rounded-lg bg-[#1f1f1f] text-zinc-400 hover:text-white hover:bg-[#282828] transition-all">
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-2 rounded-lg bg-[#1f1f1f] text-zinc-400 hover:text-red-400 hover:bg-[#282828] transition-all">
+                <button
+                  type="button"
+                  onClick={clearAddress}
+                  disabled={savingAddress}
+                  aria-label="Remove address"
+                  className="p-2 rounded-lg bg-[#1f1f1f] text-zinc-400 hover:text-red-400 hover:bg-[#282828] transition-all disabled:opacity-50"
+                >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
-
-            <div className="bg-[#161616] border border-[#222] rounded-xl p-4 flex items-center justify-between hover:border-[#333] transition-all">
-              <div>
-                <div className="text-sm font-semibold text-white">Work</div>
-                <div className="text-xs text-zinc-400 mt-0.5">88 Heer St, Cape Town</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="p-2 rounded-lg bg-[#1f1f1f] text-zinc-400 hover:text-white hover:bg-[#282828] transition-all">
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-2 rounded-lg bg-[#1f1f1f] text-zinc-400 hover:text-red-400 hover:bg-[#282828] transition-all">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-[#222] bg-[#121212]/50 p-6 text-center">
+              <MapPin className="mx-auto mb-2 w-5 h-5 text-zinc-500" />
+              <p className="text-sm text-zinc-400">No address saved yet.</p>
+              <button
+                type="button"
+                onClick={startEditAddress}
+                className="mt-3 text-xs font-medium text-[#d4af37] hover:text-[#c4a133] transition-all underline-offset-2 hover:underline"
+              >
+                Add an address
+              </button>
             </div>
-          </div>
+          )}
         </section>
 
         {/* Preferences / Notifications */}
@@ -411,15 +566,19 @@ export default function AdminProfilePage() {
             </button>
           </div>
 
-          <div className="bg-[#161616] border border-[#222] rounded-xl p-4 flex items-center justify-between mb-3 hover:border-[#333] transition-all cursor-pointer">
+          <button
+            type="button"
+            onClick={() => setShowPwModal(true)}
+            className="w-full bg-[#161616] border border-[#222] rounded-xl p-4 flex items-center justify-between hover:border-[#333] transition-all cursor-pointer"
+          >
             <div className="flex items-center gap-3">
               <Lock className="w-4 h-4 text-[#d4af37]" />
               <div className="text-sm font-medium text-white">Change password</div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-500" />
-          </div>
+          </button>
 
-          <div className="bg-[#161616] border border-[#222] rounded-xl p-4 flex items-center justify-between hover:border-[#333] transition-all cursor-pointer">
+          <div className="bg-[#161616] border border-[#222] rounded-xl p-4 flex items-center justify-between hover:border-[#333] transition-all cursor-pointer mt-3">
             <div className="flex items-center gap-3">
               <ShieldCheck className="w-4 h-4 text-[#d4af37]" />
               <div className="text-sm font-medium text-white">Two-factor authentication</div>
@@ -429,6 +588,82 @@ export default function AdminProfilePage() {
         </section>
 
       </div>
+      
+      {/* ── Change Password Modal ── */}
+      {showPwModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[28px] border border-[#222] bg-[#121212] p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Change password</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPwModal(false);
+                  setPwError(null);
+                  setPwForm({ newPassword: "", confirmPassword: "" });
+                }}
+                className="rounded-full p-2 text-zinc-400 hover:bg-white/10 hover:text-white transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              {pwError && (
+                <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-400">
+                  {pwError}
+                </div>
+              )}
+              {pwSuccess && (
+                <div className="rounded-xl border border-[#d4af37]/30 bg-[#d4af37]/10 px-4 py-3 text-sm text-[#d4af37]">
+                  {pwSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1" htmlFor="new-password">New password</label>
+                <div className="relative">
+                  <LockKeyhole size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#d4af37]" />
+                  <input
+                    id="new-password"
+                    type="password"
+                    required
+                    className="w-full bg-[#161616] border border-[#222] rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-[#d4af37]"
+                    value={pwForm.newPassword}
+                    onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1" htmlFor="confirm-password">Confirm new password</label>
+                <div className="relative">
+                  <LockKeyhole size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#d4af37]" />
+                  <input
+                    id="confirm-password"
+                    type="password"
+                    required
+                    className="w-full bg-[#161616] border border-[#222] rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-[#d4af37]"
+                    value={pwForm.confirmPassword}
+                    onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={savingPw}
+                  className="w-full bg-[#d4af37] hover:bg-[#c4a133] text-black px-4 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-[#d4af37]/10 disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {savingPw ? "Saving..." : "Update password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </main>
   );
