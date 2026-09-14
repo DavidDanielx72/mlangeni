@@ -39,14 +39,14 @@ export default function AdminProfilePage() {
   const [profileSuccess, setProfileSuccess] = useState(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // ── Address inline-edit state ─────────────────────────────
+  // Address line edit state 
   const addressInputRef = React.useRef(null);
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressDraft, setAddressDraft] = useState("");
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressError, setAddressError] = useState(null);
 
-  // ── Change-password modal state ───────────────────────────
+  // Change Admin password state 
   const [showPwModal, setShowPwModal] = useState(false);
   const [pwForm, setPwForm] = useState({ newPassword: "", confirmPassword: "" });
   const [pwError, setPwError] = useState(null);
@@ -152,7 +152,7 @@ export default function AdminProfilePage() {
     setProfileSuccess("Profile updated successfully.");
   }
 
-  // ── Address handlers ──────────────────────────────────────
+  // Address handlers
   function startEditAddress() {
     setAddressDraft(adminProfile.companyAddress);
     setAddressError(null);

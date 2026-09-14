@@ -1,4 +1,3 @@
-// Cust Profile
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -127,23 +126,23 @@ export default function ProfilePage() {
   const [profileSuccess, setProfileSuccess] = useState(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // ── Change-password modal state ───────────────────────────
+  // Change-password
   const [showPwModal, setShowPwModal] = useState(false);
   const [pwForm, setPwForm] = useState({ newPassword: "", confirmPassword: "" });
   const [pwError, setPwError] = useState(null);
   const [pwSuccess, setPwSuccess] = useState(null);
   const [savingPw, setSavingPw] = useState(false);
 
-  // ── Address inline-edit state ─────────────────────────────
+  // Address one line edit
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressDraft, setAddressDraft] = useState("");
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressError, setAddressError] = useState(null);
 
-  // ── Notifications ─────────────────────────────────────────
+  // Notifications
   const [notificationsOn, setNotificationsOn] = useState(true);
 
-  // ── Derived display values ────────────────────────────────
+  // Display user's name & surname
   const displayName = useMemo(() => {
     const name = `${customerProfile.firstName} ${customerProfile.lastName}`.trim();
     return name || "Customer profile";
@@ -164,7 +163,7 @@ export default function ProfilePage() {
       .join("")
       .slice(0, 2) || "C";
 
-  // ── Load profile from Supabase ────────────────────────────
+  // Load profile from Supabase
   useEffect(() => {
     let isMounted = true;
 
@@ -189,7 +188,7 @@ export default function ProfilePage() {
 
       setUserId(user.id);
 
-      // Read from the customer table (source of truth)
+      // Read from the customer table
       const { data: row, error: dbError } = await supabase
         .from("customer")
         .select("first_name, last_name, phone_number, address")
@@ -223,7 +222,7 @@ export default function ProfilePage() {
     return () => { isMounted = false; };
   }, [router]);
 
-  // ── Personal info handlers ────────────────────────────────
+  // Personal info handlers
   function handleChange(field) {
     return (e) => setCustomerProfile((prev) => ({ ...prev, [field]: e.target.value }));
   }
@@ -234,7 +233,6 @@ export default function ProfilePage() {
     setProfileSuccess(null);
     setSavingProfile(true);
 
-    // 1. Update auth metadata (keeps email in sync)
     const { error: authErr } = await supabase.auth.updateUser({
       email: customerProfile.email,
       data: {
@@ -250,7 +248,7 @@ export default function ProfilePage() {
       return;
     }
 
-    // 2. Update customer table (source of truth for the app)
+    // Update customer table on Supabase
     const { error: dbErr } = await supabase
       .from("customer")
       .update({
@@ -305,11 +303,11 @@ export default function ProfilePage() {
   }
 
   function handleDeleteAccount() {
-    // TODO: trigger a confirmation modal, then call the delete-account flow.
+    // TODO: trigger a confirmation, then call the delete-account flow.
     console.log("delete account requested");
   }
 
-  // ── Address handlers ──────────────────────────────────────
+  // Address handlers
   function startEditAddress() {
     setAddressDraft(customerProfile.address);
     setAddressError(null);
@@ -364,7 +362,7 @@ export default function ProfilePage() {
     setEditingAddress(false);
   }
 
-  // ── Loading / error screens ───────────────────────────────
+  // Error screens
   if (loadingProfile) {
     return (
       <main className="min-h-screen bg-[#0A0A0A] px-4 py-8 text-white md:px-8 lg:px-10">
@@ -396,7 +394,6 @@ export default function ProfilePage() {
     );
   }
 
-  // ── Main render ───────────────────────────────────────────
   return (
     <main className="min-h-screen bg-[#0A0A0A] px-4 py-8 text-white md:px-8 lg:px-10">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -446,7 +443,7 @@ export default function ProfilePage() {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_0.95fr]">
 
-          {/* ── Personal information form ── */}
+          {/* Personal information form */}
           <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur-md md:p-8">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
@@ -615,7 +612,7 @@ export default function ProfilePage() {
               )}
             </section>
 
-            {/* ── Payment section ── */}
+            {/* Payment Card for Customer */}
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur-md md:p-8">
               <div className="mb-6 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -699,7 +696,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* ── Change Password Modal ── */}
+      {/** Customer Change Password */}
       {showPwModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#0A0A0A] p-6 shadow-2xl">
