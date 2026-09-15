@@ -36,11 +36,12 @@ export function AvailabilityPanel({
   onPickWindow,
 }) {
   const booked = mergeRanges(ranges);
-  const conflicts = unsupported ? [] : findConflicts(booked, startTime, endTime);
+  const conflicts = unsupported
+    ? []
+    : findConflicts(booked, startTime, endTime);
   const gaps = freeGaps(booked);
 
-  const shell =
-    "rounded-2xl border border-mgh-line bg-mgh-surface-2 p-5";
+  const shell = "rounded-2xl border border-mgh-line bg-mgh-surface-2 p-5";
 
   if (!date) {
     return (
@@ -174,7 +175,11 @@ export function AvailabilityPanel({
           role="alert"
           className="mt-5 flex items-start gap-2.5 rounded-xl border border-mgh-danger/40 bg-mgh-danger/10 p-3.5 text-xs leading-relaxed text-mgh-danger"
         >
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <AlertTriangle
+            size={15}
+            className="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
           <span>
             Your {formatRangeLabel({ start: startTime, end: endTime })} window
             overlaps {conflicts.length === 1 ? "a booking" : "bookings"} at{" "}

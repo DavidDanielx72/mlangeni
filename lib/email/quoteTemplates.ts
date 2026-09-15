@@ -33,7 +33,7 @@ export type QuoteItem = {
 };
 
 export type QuotePayload = {
-  enquiryId: string | number;
+  orderId: string | number;
   customer: { name: string; email: string; phone?: string };
   event: {
     date: string; // yyyy-MM-dd
@@ -101,7 +101,7 @@ function eventRows(payload: QuotePayload, includeReference: boolean) {
     { label: "Guests", value: String(payload.event.guests) },
   ];
   if (includeReference) {
-    rows.unshift({ label: "Reference", value: `#${payload.enquiryId}` });
+    rows.unshift({ label: "Reference", value: `#${payload.orderId}` });
   }
   return rows;
 }
@@ -163,7 +163,7 @@ export function renderAdminQuoteText(payload: QuotePayload): string {
   const lines = [
     `NEW MENU QUOTE REQUEST`,
     ``,
-    `Reference:  #${payload.enquiryId}`,
+    `Reference:  #${payload.orderId}`,
     `Customer:   ${payload.customer.name} <${payload.customer.email}>`,
     `Phone:      ${payload.customer.phone || "Not provided"}`,
     ``,
@@ -237,14 +237,14 @@ export function renderCustomerQuoteEmail(
     : "";
 
   return emailShell({
-    preheader: `Reference #${payload.enquiryId} — we'll be in touch within 24 hours.`,
+    preheader: `Reference #${payload.orderId} — we'll be in touch within 24 hours.`,
     eyebrow: "Quote Request Received",
     title: `Thank you, ${firstName(payload.customer.name)}.`,
     intro:
       "We have your menu and event details. Nothing is charged yet — this is a request, and we'll confirm everything with you first.",
     bodyHtml: body,
     ctaHtml: cta,
-    footerNote: `Quote reference #${payload.enquiryId}. Reply to this email if anything needs changing.`,
+    footerNote: `Quote reference #${payload.orderId}. Reply to this email if anything needs changing.`,
   });
 }
 
@@ -254,7 +254,7 @@ export function renderCustomerQuoteText(payload: QuotePayload): string {
     ``,
     `We have your menu and event details. Nothing is charged yet — we'll confirm everything with you first.`,
     ``,
-    `Reference:  #${payload.enquiryId}`,
+    `Reference:  #${payload.orderId}`,
     `Date:       ${formatDateLong(payload.event.date)}`,
     `Time:       ${formatTimeRange(payload.event.startTime, payload.event.endTime)}`,
     `Occasion:   ${payload.event.typeName || "Custom event"}`,

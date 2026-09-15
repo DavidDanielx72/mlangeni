@@ -73,8 +73,8 @@ export default function EnquiryContent() {
       setCheckingAvailability(true);
 
       // Must be the RPC: availability depends on OTHER customers' confirmed
-      // enquiries, and since db/006 a signed-in customer can only see their
-      // own rows. A table read here would report every date as free.
+      // enquiries, and a signed-in customer can only see their own rows. A
+      // table read here reports every date as free instead of erroring.
       const { data, error } = await supabase.rpc("get_booked_sessions", {
         p_date: eventDate,
       });

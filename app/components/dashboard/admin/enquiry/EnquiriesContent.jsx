@@ -107,8 +107,8 @@ export default function EnquiriesContent() {
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      // phone is nullable since db/006 — the menu builder treats it as
-      // optional, so this can't assume a string.
+      // `phone` is nullable since db/006 and stays that way (see db/007), so
+      // this can't assume a string — one null row would break every search.
       result = result.filter(
         (e) =>
           (e.name ?? "").toLowerCase().includes(q) ||

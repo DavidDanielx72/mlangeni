@@ -7,7 +7,16 @@
  */
 
 import { startOfDay } from "date-fns";
-import { MIN_DURATION_MINUTES, durationMinutes, toMinutes } from "./availability";
+import {
+  MIN_DURATION_MINUTES,
+  durationMinutes,
+  toMinutes,
+} from "./availability";
+import {
+  getAdvanceBookingMessage,
+  getMinimumEventDate,
+} from "@/app/utils/customerBookingRules";
+import { SESSION_WINDOWS } from "@/app/components/constants/sessions";
 
 export const GUEST_MIN = 1;
 export const GUEST_MAX = 2000;
@@ -21,7 +30,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function maxBookingDate(today = new Date()) {
   const d = startOfDay(today);
-  return new Date(d.getFullYear(), d.getMonth() + MAX_MONTHS_AHEAD, d.getDate());
+  return new Date(
+    d.getFullYear(),
+    d.getMonth() + MAX_MONTHS_AHEAD,
+    d.getDate(),
+  );
 }
 
 function validateGuests(guests) {
@@ -41,6 +54,10 @@ function validateDate(eventDate, today) {
   );
   if (Number.isNaN(chosen.getTime())) return "That date isn't valid";
   if (chosen < startOfDay(today)) return "Please choose a date in the future";
+  // Bookings need a month's lead time. The rule lives in customerBookingRules
+  // because the packages flow and the date picker's own `minDate` share it.
+  const minimum = getMinimumEventDate(today);
+  if (chosen < startOfDay(minimum)) return getAdvanceBookingMessage(minimum);
   if (chosen > maxBookingDate(today))
     return `We take bookings up to ${MAX_MONTHS_AHEAD} months ahead`;
   return null;
@@ -55,20 +72,34 @@ function validateLocation(location) {
   return null;
 }
 
-function validateTimes(startTime, endTime) {
+/**
+ * The customer picks a session; start and end times are derived from it in
+ * MenuContext. So the only thing to validate is that a known session was
+ * chosen — the clock check that follows is a backstop against a malformed
+ * window reaching `orders`, which would otherwise fail on its CHECK constraint
+ * with a message no customer could act on.
+ */
+function validateTimes(state) {
   const errors = {};
-  if (toMinutes(startTime) === null) {
-    errors.startTime = "Please set a start time";
+
+  if (!state.session) {
+    errors.session = "Please choose a session";
     return errors;
   }
-  if (toMinutes(endTime) === null) {
-    errors.endTime = "Please set an end time";
+  if (!SESSION_WINDOWS[state.session]) {
+    errors.session = "That session isn't one we offer";
     return errors;
   }
-  const mins = durationMinutes(startTime, endTime);
-  if (mins <= 0) errors.endTime = "End time must be after the start time";
-  else if (mins < MIN_DURATION_MINUTES)
-    errors.endTime = `Events run for at least ${MIN_DURATION_MINUTES} minutes`;
+
+  const mins = durationMinutes(state.startTime, state.endTime);
+  if (
+    toMinutes(state.startTime) === null ||
+    toMinutes(state.endTime) === null ||
+    mins === null ||
+    mins < MIN_DURATION_MINUTES
+  ) {
+    errors.session = "That session doesn't cover a usable time window";
+  }
   return errors;
 }
 
@@ -79,7 +110,10 @@ function validateTimes(startTime, endTime) {
  * @param {Date}   ctx.today
  * @returns {Record<string, string>} field name → message, empty when valid
  */
-export function validateEventDetails(state, { conflicts = [], today = new Date() } = {}) {
+export function validateEventDetails(
+  state,
+  { conflicts = [], today = new Date() } = {},
+) {
   const errors = {};
 
   const guests = validateGuests(state.guests);
@@ -93,7 +127,7 @@ export function validateEventDetails(state, { conflicts = [], today = new Date()
   const location = validateLocation(state.eventLocation);
   if (location) errors.eventLocation = location;
 
-  Object.assign(errors, validateTimes(state.startTime, state.endTime));
+  Object.assign(errors, validateTimes(state));
 
   if (String(state.notes ?? "").length > NOTES_MAX) {
     errors.notes = `Please keep notes under ${NOTES_MAX} characters`;
@@ -103,8 +137,8 @@ export function validateEventDetails(state, { conflicts = [], today = new Date()
 
   // Only surface a clash when we actually have availability data — a failed
   // lookup must never block a booking.
-  if (conflicts.length > 0 && !errors.endTime) {
-    errors.endTime = "This time overlaps an existing booking";
+  if (conflicts.length > 0 && !errors.session) {
+    errors.session = "That session is already booked on this date";
   }
 
   return errors;
@@ -119,7 +153,8 @@ export function validateContact(state) {
 
   const email = String(state.contactEmail ?? "").trim();
   if (!email) errors.contactEmail = "We need an email to send your quote to";
-  else if (!EMAIL_RE.test(email)) errors.contactEmail = "That email doesn't look right";
+  else if (!EMAIL_RE.test(email))
+    errors.contactEmail = "That email doesn't look right";
 
   const phone = String(state.contactPhone ?? "").trim();
   if (phone && phone.replace(/\D/g, "").length < 7) {
@@ -140,8 +175,7 @@ export const FIELD_ORDER = [
   "guests",
   "eventTypeId",
   "eventDate",
-  "startTime",
-  "endTime",
+  "session",
   "eventLocation",
   "notes",
   "contactName",

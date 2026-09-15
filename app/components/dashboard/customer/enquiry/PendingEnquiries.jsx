@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChefHat, Clock3 } from "lucide-react";
+import { Clock3 } from "lucide-react";
 import { supabase } from "@/services/supabaseClient";
 import {
   SESSION_OPTIONS,
@@ -15,18 +15,15 @@ import {
  * Enquiries widget sends anyone who wants to *see* their enquiries — so
  * arriving here and finding only an empty form answered the wrong question.
  *
- * Deliberately pending-only and read-only. A confirmed menu-builder request
- * becomes an order (db/006) and belongs on the Orders page; a cancelled one is
- * not something to leave sitting in front of the customer.
+ * Deliberately pending-only and read-only. Confirmed enquiries are a booking
+ * the team has accepted and belong on the Orders page; a cancelled one is not
+ * something to leave sitting in front of the customer.
+ *
+ * Note this covers enquiries only. Menu-builder submissions are orders, not
+ * enquiries, so they appear under Orders and never here.
  */
 
 const MAX_SHOWN = 4;
-
-const currency = new Intl.NumberFormat("en-ZA", {
-  style: "currency",
-  currency: "ZAR",
-  maximumFractionDigits: 0,
-});
 
 function formatDate(dateString) {
   return new Date(dateString + "T00:00:00").toLocaleDateString("en-ZA", {
@@ -63,7 +60,7 @@ export default function PendingEnquiries() {
 
       const { data, error: fetchError } = await supabase
         .from("enquiries")
-        .select("id, event_date, session, guests, source, total_price")
+        .select("id, event_date, session, guests")
         .eq("user_id", user.id)
         .eq("status", "pending")
         .order("event_date", { ascending: true });
@@ -138,18 +135,6 @@ export default function PendingEnquiries() {
                     Pending
                   </span>
                 </div>
-
-                {enquiry.source === "menu_builder" && (
-                  <p className="mt-2 flex items-center gap-1.5 text-[10px] text-emerald-400">
-                    <ChefHat size={11} />
-                    Custom menu
-                    {enquiry.total_price != null && (
-                      <span className="text-white/30">
-                        · {currency.format(Number(enquiry.total_price))} est.
-                      </span>
-                    )}
-                  </p>
-                )}
               </li>
             ))}
           </ul>

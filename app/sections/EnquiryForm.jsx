@@ -98,9 +98,11 @@ export default function EnquiryForm() {
       return;
     }
     const fetchBooked = async () => {
-      // db/006 dropped the blanket public read on `enquiries` — it exposed
-      // every lead's name, email and phone to anyone. This RPC returns the
-      // booked session labels and nothing else.
+      // Must go through the RPC. db/006 dropped the blanket public read on
+      // `enquiries` — it exposed every lead's name, email and phone — and
+      // db/007 deliberately keeps it dropped. A table read here returns zero
+      // rows for an anonymous visitor rather than erroring, which would show
+      // every session as free and let the date be double-booked.
       const { data } = await supabase.rpc("get_booked_sessions", {
         p_date: formData.eventDate,
       });

@@ -44,13 +44,9 @@ export function validateQuotePayload(body: unknown): ValidationResult {
   const totals = asRecord(b.totals);
   const rawItems = Array.isArray(b.items) ? b.items : null;
 
-  const enquiryId = b.enquiryId;
-  if (
-    enquiryId === undefined ||
-    enquiryId === null ||
-    String(enquiryId).length === 0
-  ) {
-    errors.push("enquiryId is required");
+  const orderId = b.orderId;
+  if (orderId === undefined || orderId === null || String(orderId).length === 0) {
+    errors.push("orderId is required");
   }
 
   const name = str(customer.name);
@@ -119,7 +115,7 @@ export function validateQuotePayload(body: unknown): ValidationResult {
   return {
     ok: true,
     payload: {
-      enquiryId: enquiryId as string | number,
+      orderId: orderId as string | number,
       customer: { name, email, phone: phone || undefined },
       event: {
         date,

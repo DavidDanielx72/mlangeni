@@ -125,7 +125,9 @@ export const TAG_COLORS = {
 /** Pull the joined category name off a `menu_item` row from Supabase. */
 export function readCategoryName(row) {
   if (!row) return undefined;
-  return Array.isArray(row.category) ? row.category[0]?.name : row.category?.name;
+  return Array.isArray(row.category)
+    ? row.category[0]?.name
+    : row.category?.name;
 }
 
 /**

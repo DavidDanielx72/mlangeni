@@ -79,7 +79,10 @@ export function TimeField({ id, label, required, hint, error, ...props }) {
         step={300}
         aria-invalid={!!error}
         aria-describedby={describedBy(id, { hint, error })}
-        className={controlClass({ invalid: !!error, className: "tabular-nums" })}
+        className={controlClass({
+          invalid: !!error,
+          className: "tabular-nums",
+        })}
         {...props}
       />
     </Field>
@@ -108,7 +111,7 @@ export function SelectField({
       >
         <option value="">{placeholder}</option>
         {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
             {opt.label}
           </option>
         ))}
