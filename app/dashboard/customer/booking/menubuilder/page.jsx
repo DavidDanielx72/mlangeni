@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect, useReducer } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/services/supabaseClient";
 import { groupMenuItems } from "@/app/components/menu/constants";
 import { MenuProvider, useMenu } from "@/app/components/menu/MenuContext";
 import { ProgressBar } from "@/app/components/menu/ProgressBar";
 import { CartSidebar } from "@/app/components/menu/CartSidebar";
 import { StepRouter } from "@/app/components/menu/StepRouter";
-import { AlertCircle, UtensilsCrossed, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import {
   getActiveBookingMessage,
   getActiveCustomerBooking,
@@ -26,6 +26,8 @@ function MenuBuilder() {
   const { state, dispatch } = useMenu();
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuError, setMenuError] = useState("");
+  // A customer may only have one live booking at a time; while they do, the
+  // builder is closed rather than letting them compose a menu they can't send.
   const [activeBooking, setActiveBooking] = useState(null);
 
   const loadAll = useCallback(async () => {
@@ -70,13 +72,12 @@ function MenuBuilder() {
 
       if (customerRes.data) {
         dispatch({ type: "SET_EXISTING_CUSTOMER", payload: customerRes.data });
-
-        const booking = await getActiveCustomerBooking(
-          supabase,
-          customerRes.data.customer_id,
+        setActiveBooking(
+          await getActiveCustomerBooking(
+            supabase,
+            customerRes.data.customer_id,
+          ),
         );
-
-        setActiveBooking(booking);
       }
 
       dispatch({ type: "SET_EVENT_TYPES", payload: eventTypesRes.data || [] });
@@ -103,14 +104,11 @@ function MenuBuilder() {
   }, [dispatch]);
 
   useEffect(() => {
-    const loadTimer = window.setTimeout(() => {
-      loadAll();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(loadTimer);
-    };
-  }, []);
+    // Initial data fetch; the setState inside is the result of the request,
+    // not state derivable during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAll();
+  }, [loadAll]);
 
   return (
     <main className="bg-mgh-bg px-6 py-10 text-mgh-text md:px-10 lg:px-14">
@@ -149,7 +147,29 @@ function MenuBuilder() {
           </div>
         )}
 
-        {!menuLoading && !menuError && state.menu && (
+        {!menuLoading && !menuError && activeBooking && (
+          <div className="my-10 rounded-2xl border border-mgh-line bg-mgh-surface p-8 text-center">
+            <AlertCircle
+              size={28}
+              className="mx-auto text-mgh-gold"
+              aria-hidden="true"
+            />
+            <h2 className="mt-5 font-serif text-3xl font-medium text-mgh-text">
+              Active Booking In Progress
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-mgh-muted md:text-base">
+              {getActiveBookingMessage(activeBooking)}
+            </p>
+            <Link
+              href="/dashboard/customer/orders"
+              className="mt-7 inline-flex h-11 items-center justify-center rounded-xl border border-mgh-gold/40 px-5 text-sm font-semibold text-mgh-gold transition hover:border-mgh-gold hover:bg-mgh-gold hover:text-mgh-gold-ink"
+            >
+              View My Bookings
+            </Link>
+          </div>
+        )}
+
+        {!menuLoading && !menuError && !activeBooking && state.menu && (
           <>
             <ProgressBar />
 
@@ -159,30 +179,12 @@ function MenuBuilder() {
               </div>
               <CartSidebar />
             </div>
-          )}
-
-          {!menuLoading && !menuError && activeBooking && (
-            <div className="my-10 border border-white/10 bg-white/[0.03] p-8 text-center backdrop-blur-md">
-              <AlertCircle className="mx-auto text-[#D4AF37]" size={32} />
-              <h2 className="mt-5 font-serif text-3xl font-medium text-white">
-                Active Booking In Progress
-              </h2>
-              <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-[#A0A0A0] md:text-base">
-                {getActiveBookingMessage(activeBooking)}
-              </p>
-              <Link
-                href="/dashboard/customer/orders"
-                className="mt-7 inline-flex h-11 items-center justify-center rounded-lg border border-[#D4AF37]/40 px-5 text-sm font-semibold text-[#D4AF37] transition hover:border-[#D4AF37] hover:bg-[#D4AF37] hover:text-black"
-              >
-                View My Bookings
-              </Link>
-            </div>
-          )}
-
-          {/* ACTIVE BUILDER INTERFACE */}
-          {!menuLoading && !menuError && !activeBooking && state.menu && (
-            <>
-              <ProgressBar />
+          </>
+        )}
+      </section>
+    </main>
+  );
+}
 
 /** Card-shaped placeholders, so the layout doesn't jump when the menu lands. */
 function MenuSkeleton() {

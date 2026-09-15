@@ -11,18 +11,22 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
+import { supabase } from "@/services/supabaseClient";
 import BookingSuccessModal from "@/app/components/dashboard/customer/BookingSuccessModal";
 import { sendQuoteEmail } from "@/services/quoteEmailService";
 import { useMenu } from "./MenuContext";
 import { rowDisplayName } from "./constants";
-import { Info } from "lucide-react";
+import { computeTotals, courseGroups, formatZAR, guestCount } from "./pricing";
+import { formatDateLong, formatRangeLabel, toDateKey } from "./availability";
+import { SESSION_OPTIONS } from "@/app/components/constants/sessions";
+import { submitMenuOrder } from "./submitQuote";
+import { validateEventDetails } from "./validation";
 import {
   getActiveBookingMessage,
   getActiveCustomerBooking,
-  getAdvanceBookingMessage,
-  getMinimumEventDate,
-  isBeforeMinimumEventDate,
 } from "@/app/utils/customerBookingRules";
+
+const EVENT_DETAILS_STEP = 4;
 
 export function QuoteStep() {
   const { state, dispatch } = useMenu();
@@ -50,6 +54,9 @@ export function QuoteStep() {
     ? rowDisplayName(selectedEventType, "event_id")
     : "Custom Event";
 
+  const sessionLabel =
+    SESSION_OPTIONS.find((o) => o.value === state.session)?.label ?? "";
+
   const goEditDetails = () =>
     dispatch({ type: "GO_TO_STEP", payload: EVENT_DETAILS_STEP });
 
@@ -66,117 +73,37 @@ export function QuoteStep() {
       return;
     }
 
-    const minimumEventDate = getMinimumEventDate();
-
-    if (isBeforeMinimumEventDate(state.eventDate, minimumEventDate)) {
-      setSendError(getAdvanceBookingMessage(minimumEventDate));
-      return;
-    }
-
     setSending(true);
     setSendError("");
 
     try {
-      let customerId = state.existingCustomer?.customer_id;
-
-      if (!customerId) {
-        const fullName = state.contactName.trim();
-        const [first_name, ...rest] = fullName.split(/\s+/);
-        const last_name = rest.join(" ");
-
-        const { data: newCustomer, error: custErr } = await supabase
-          .from("customer")
-          .insert({
-            user_id: state.authUser.id,
-            email: state.authUser.email,
-            first_name: first_name || null,
-            last_name: last_name || null,
-            phone_number: state.contactPhone || null,
-          })
-          .select("customer_id")
-          .single();
-
-        if (custErr) throw new Error(custErr.message);
-        customerId = newCustomer.customer_id;
-      }
-
-      const blockingBooking = await getActiveCustomerBooking(
-        supabase,
-        customerId,
-      );
-
-      if (blockingBooking) {
-        throw new Error(getActiveBookingMessage(blockingBooking));
-      }
-
-      const total_price = allSelectedItems.reduce(
-        (sum, item) => sum + Number(item.price) * guests,
-        0,
-      );
-
-      const { data: order, error: orderErr } = await supabase
-        .from("orders")
-        .insert({
-          customer_id: customerId,
-          event_type_id: state.eventTypeId,
-          status: "pending",
-          total_price,
-          event_date: state.eventDate,
-          event_location: state.eventLocation,
-          start_time: state.startTime,
-          end_time: state.endTime,
-          number_of_guest: guests,
-        })
-        .select("order_id")
-        .single();
-
-      if (orderErr) {
-        if (orderErr.code === "23P01" || /overlap/i.test(orderErr.message)) {
-          throw new Error(
-            "This venue/time slot conflicts with an existing reservation.",
-          );
+      // One live booking per customer. The builder page gates on this too, but
+      // the check is repeated here because a booking can be placed in another
+      // tab while this quote sits open. A customer with no profile row yet
+      // cannot have one, so there is nothing to look up in that case.
+      const existingCustomerId = state.existingCustomer?.customer_id;
+      if (existingCustomerId) {
+        const activeBooking = await getActiveCustomerBooking(
+          supabase,
+          existingCustomerId,
+        );
+        if (activeBooking) {
+          throw new Error(getActiveBookingMessage(activeBooking));
         }
-        throw new Error(orderErr.message);
       }
 
-      const cmiRows = allSelectedItems.map((it) => ({
-        order_id: order.order_id,
-        item_id: it.item_id,
-        quantity: guests,
-      }));
+      const { orderId } = await submitMenuOrder(state);
 
-      if (cmiRows.length > 0) {
-        const { error: cmiErr } = await supabase
-          .from("customer_menu_items")
-          .insert(cmiRows);
-
-        if (cmiErr) throw new Error(cmiErr.message);
-      }
-
-      const consultationNote =
-        state.notes?.trim() ||
-        "Customer submitted an order request and is awaiting admin consultation.";
-
-      const { error: consultationErr } = await supabase
-        .from("consultations")
-        .insert({
-          order_id: order.order_id,
-          customer_id: customerId,
-          status: "requested",
-          meeting_date: `${state.eventDate}T${state.startTime || "09:00"}:00`,
-          note: consultationNote,
-        });
-
-      if (consultationErr) throw new Error(consultationErr.message);
-
+      // The booking is saved. Show success now — the email is a courtesy that
+      // must never gate or fail this.
       setSuccessSummary(
-        `Quote request #${enquiryId} submitted for ${eventTypeName} with ${guests} guest${guests === 1 ? "" : "s"}.`,
+        `Quote request #${orderId} submitted for ${eventTypeName} with ${guests} guest${guests === 1 ? "" : "s"}.`,
       );
       setShowSuccessModal(true);
       dispatch({ type: "SEND_QUOTE" });
 
       sendQuoteEmail({
-        enquiryId,
+        orderId,
         customer: {
           name: state.contactName.trim(),
           email: state.contactEmail || state.authUser?.email,
@@ -210,7 +137,7 @@ export function QuoteStep() {
           // inbox — delivered, but not to this customer.
           if (!result.ok || result.customer !== "sent") {
             setEmailNote(
-              "We couldn't email you a copy of this request, but it's safely in our system — you can view it any time under your enquiries.",
+              "We couldn't email you a copy of this request, but it's safely in our system — you can view it any time under your orders.",
             );
           }
         })
@@ -219,6 +146,7 @@ export function QuoteStep() {
         });
     } catch (err) {
       setSendError(err.message || "An unexpected error occurred.");
+      if (err.code === "23P01") goEditDetails();
     } finally {
       setSending(false);
     }
@@ -230,15 +158,10 @@ export function QuoteStep() {
     <form onSubmit={handleSubmit} noValidate>
       <BookingSuccessModal
         isOpen={showSuccessModal}
-        eyebrow="Request received"
         title="Your menu request is in"
-        message="Your menu has been sent to our culinary directors for review. Once they approve it, it becomes a confirmed booking and appears under your orders."
+        message="Your custom booking has been submitted. You can return to the dashboard or jump straight to your orders page to review it again."
         orderLabel={successSummary || "Your quote request has been sent."}
         note={emailNote || undefined}
-        // Not /orders — there is no order until an admin approves. This is the
-        // same destination the dashboard's Enquiries widget links to.
-        ordersHref="/dashboard/customer/enquiry"
-        ctaLabel="View my enquiries"
         onClose={() => {
           setShowSuccessModal(false);
           setEmailNote("");
@@ -285,11 +208,18 @@ export function QuoteStep() {
           />
           <Metric
             icon={Clock}
-            label="Time"
-            value={formatRangeLabel({
-              start: state.startTime,
-              end: state.endTime,
-            })}
+            label="Session"
+            value={
+              sessionLabel
+                ? `${sessionLabel} (${formatRangeLabel({
+                    start: state.startTime,
+                    end: state.endTime,
+                  })})`
+                : formatRangeLabel({
+                    start: state.startTime,
+                    end: state.endTime,
+                  })
+            }
           />
         </dl>
 
@@ -325,8 +255,7 @@ export function QuoteStep() {
                 {group.label}
               </h3>
               <span className="text-[10px] uppercase tracking-wider text-mgh-faint">
-                {group.rows.length}{" "}
-                {group.rows.length === 1 ? "item" : "items"}
+                {group.rows.length} {group.rows.length === 1 ? "item" : "items"}
               </span>
             </div>
 
@@ -423,7 +352,11 @@ export function QuoteStep() {
           role="alert"
           className="mt-6 flex items-start gap-2.5 rounded-xl border border-mgh-danger/40 bg-mgh-danger/10 p-4 text-sm text-mgh-danger"
         >
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <AlertTriangle
+            size={16}
+            className="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
           {sendError}
         </p>
       )}

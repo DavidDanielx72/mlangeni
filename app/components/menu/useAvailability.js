@@ -72,9 +72,10 @@ export function useAvailability({
     };
   }, []);
 
-  const anchor = month instanceof Date && !Number.isNaN(month.getTime())
-    ? month
-    : new Date();
+  const anchor =
+    month instanceof Date && !Number.isNaN(month.getTime())
+      ? month
+      : new Date();
   const anchorKey = format(startOfMonth(anchor), MONTH_KEY);
 
   const load = useCallback(
@@ -136,7 +137,10 @@ export function useAvailability({
       for (const row of data ?? []) {
         const key = toDateKey(row.event_date);
         if (!key) continue;
-        const range = { start: toHHMM(row.start_time), end: toHHMM(row.end_time) };
+        const range = {
+          start: toHHMM(row.start_time),
+          end: toHHMM(row.end_time),
+        };
         if (!range.start || !range.end) continue;
         next.set(key, [...(next.get(key) ?? []), range]);
       }

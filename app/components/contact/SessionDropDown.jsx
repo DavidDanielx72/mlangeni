@@ -34,8 +34,8 @@ export default function SessionDropDown({
 
     const fetchBookedSessions = async () => {
       setLoading(true);
-      // Via RPC, not a table read: db/006 removed the public read policy that
-      // used to make this work, because it also exposed every enquiry's PII.
+      // Via the RPC, not a table read — the public read policy this used to
+      // rely on was dropped in db/006 and stays dropped. See db/007.
       const { data, error: supabaseError } = await supabase.rpc(
         "get_booked_sessions",
         { p_date: isoDate },

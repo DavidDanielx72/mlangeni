@@ -1,3 +1,15 @@
+-- ============================================================================
+-- SUPERSEDED BY db/007_revert_menu_builder_enquiries.sql — DO NOT RUN THIS.
+--
+-- The decision this migration implements was reversed: the Interactive Menu
+-- Builder writes to `orders` directly, not through the enquiry approval
+-- process. 007 drops everything below EXCEPT get_booked_sessions() and the two
+-- policy drops at the end, which fixed a pre-existing PII leak and are kept.
+--
+-- This file is retained only so 007 can be read against it, and so the numbered
+-- sequence has no hole. If you are setting up a fresh database, skip it.
+-- ============================================================================
+
 -- 006 — Route the Interactive Menu Builder through the enquiry approval process.
 --
 -- WHY THIS EXISTS

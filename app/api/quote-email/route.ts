@@ -21,13 +21,8 @@ import {
  * Auth note: `services/supabaseClient.ts` is a plain browser client that keeps
  * its session in localStorage, and there's no root middleware refreshing an
  * auth cookie — so the caller must pass its access token in the Authorization
- * header. We then verify the enquiry actually belongs to that user (RLS does
- * the work), which is what stops this route being an open spam relay.
- *
- * The menu builder writes an enquiry, not an order (db/006), so the ownership
- * check reads `enquiries`. Its "customer can view own enquiries" policy is
- * what makes this work — note that it only became load-bearing once db/006
- * dropped the blanket public read policy.
+ * header. We then verify the order actually belongs to that user (RLS does the
+ * work), which is what stops this route being an open spam relay.
  */
 
 const SUPABASE_URL =
@@ -89,23 +84,23 @@ export async function POST(req: Request) {
     }
     const payload = result.payload;
 
-    // ── Does this enquiry belong to the caller? RLS answers that for us. ──
-    const { data: enquiry, error: enquiryErr } = await supabase
-      .from("enquiries")
-      .select("id")
-      .eq("id", payload.enquiryId)
+    // ── Does this order belong to the caller? RLS answers that for us. ────
+    const { data: order, error: orderErr } = await supabase
+      .from("orders")
+      .select("order_id")
+      .eq("order_id", payload.orderId)
       .maybeSingle();
 
-    if (enquiryErr) {
-      console.error("[quote-email] enquiry lookup failed:", enquiryErr.message);
+    if (orderErr) {
+      console.error("[quote-email] order lookup failed:", orderErr.message);
       return NextResponse.json(
-        { ok: false, error: "Could not verify the enquiry" },
+        { ok: false, error: "Could not verify the order" },
         { status: 500 },
       );
     }
-    if (!enquiry) {
+    if (!order) {
       return NextResponse.json(
-        { ok: false, error: "Enquiry not found for this account" },
+        { ok: false, error: "Order not found for this account" },
         { status: 403 },
       );
     }

@@ -84,10 +84,7 @@ export function ItemDetailModal({
               >
                 {item.name}
               </h3>
-              <p
-                id={descId}
-                className="mt-3 text-sm leading-7 text-mgh-muted"
-              >
+              <p id={descId} className="mt-3 text-sm leading-7 text-mgh-muted">
                 {item.description ||
                   "Our chefs prepare this to order — ask us for the full detail when we confirm your quote."}
               </p>

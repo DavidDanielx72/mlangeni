@@ -1,5 +1,22 @@
 import { isDummyOrderConfirmed } from "@/app/utils/dummyInvoicePayments";
 
+/**
+ * The two customer-facing booking restrictions, switched independently because
+ * they fail very differently.
+ *
+ * ADVANCE_BOOKING_ENABLED is the one-month minimum lead time. It only narrows
+ * which dates the calendar offers, so it is safe to leave on.
+ *
+ * ONE_ACTIVE_BOOKING_ENABLED closes the menu builder outright while a customer
+ * has a pending order, replacing the whole wizard with a notice — which also
+ * makes the builder impossible to look at while testing. That is why it is off.
+ *
+ * Every call site reads these through the helpers below, so flipping a line
+ * here is the only change needed either way.
+ */
+export const ADVANCE_BOOKING_ENABLED = true;
+export const ONE_ACTIVE_BOOKING_ENABLED = false;
+
 export const BLOCKING_ORDER_STATUSES = ["pending"];
 export const BOOKED_ORDER_STATUSES = ["confirmed", "in_progress"];
 
@@ -14,6 +31,10 @@ export function toDateInputValue(date) {
 export function getMinimumEventDate(today = new Date()) {
   const source = new Date(today);
   source.setHours(0, 0, 0, 0);
+
+  // Rule off: the only floor is "not in the past", which validation applies
+  // separately, so today is the earliest bookable date.
+  if (!ADVANCE_BOOKING_ENABLED) return source;
 
   const targetYear = source.getFullYear();
   const targetMonth = source.getMonth() + 1;
@@ -57,7 +78,9 @@ export function getActiveBookingMessage(activeBooking) {
   const eventName = activeBooking?.event_type?.event_name;
   const date = activeBooking?.event_date;
   const eventText = eventName ? ` for ${eventName}` : "";
-  const dateText = date ? ` on ${formatRuleDate(new Date(`${date}T12:00:00`))}` : "";
+  const dateText = date
+    ? ` on ${formatRuleDate(new Date(`${date}T12:00:00`))}`
+    : "";
 
   return `You already have an active booking${eventText}${dateText}. You can make another booking once this one is cancelled or fully booked.`;
 }
@@ -77,6 +100,7 @@ export async function getCustomerForUser(supabase, userId) {
 }
 
 export async function getActiveCustomerBooking(supabase, customerId) {
+  if (!ONE_ACTIVE_BOOKING_ENABLED) return null;
   if (!customerId) return null;
 
   const { data, error } = await supabase

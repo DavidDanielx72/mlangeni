@@ -62,7 +62,10 @@ export function MenuStep({ category, title, subtitle, items = [], groups }) {
         <EmptyCourse title={title} />
       ) : (
         sections.map((section, i) => (
-          <section key={section.label ?? "default"} className={i > 0 ? "mt-12" : ""}>
+          <section
+            key={section.label ?? "default"}
+            className={i > 0 ? "mt-12" : ""}
+          >
             {section.label && (
               <h3 className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-widest text-mgh-gold">
                 {section.label}
@@ -115,7 +118,9 @@ export function MenuStep({ category, title, subtitle, items = [], groups }) {
           type="button"
           disabled={!canProceed}
           onClick={() => dispatch({ type: "NEXT_STEP" })}
-          title={canProceed ? undefined : `Choose at least one item to continue`}
+          title={
+            canProceed ? undefined : `Choose at least one item to continue`
+          }
           className="rounded-xl border border-mgh-gold bg-mgh-gold px-8 py-3 text-xs font-semibold uppercase tracking-widest text-mgh-gold-ink transition-all hover:bg-transparent hover:text-mgh-gold focus:outline-none focus:ring-2 focus:ring-mgh-gold/40 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-mgh-gold disabled:hover:text-mgh-gold-ink"
         >
           {totalItems === 0 ? "Skip →" : "Next Step →"}

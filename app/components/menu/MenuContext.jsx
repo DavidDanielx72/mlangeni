@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, useReducer } from "react";
 import { STEPS } from "./constants";
+import { windowForSession } from "@/app/components/constants/sessions";
 
 export const initialState = {
   step: 0,
@@ -17,6 +18,13 @@ export const initialState = {
   eventDate: null,
   eventTypeId: "",
   eventLocation: "",
+  /**
+   * The customer picks a session (morning / afternoon / evening / all day);
+   * startTime and endTime are derived from it by SET_SESSION and are what
+   * actually reach `orders`, which needs a real time range for its
+   * no-overlap constraint.
+   */
+  session: "",
   startTime: "09:00",
   endTime: "17:00",
   notes: "",
@@ -125,6 +133,17 @@ export function reducer(state, action) {
       return { ...state, eventTypeId: action.payload };
     case "SET_EVENT_LOCATION":
       return { ...state, eventLocation: action.payload };
+    case "SET_SESSION": {
+      const window = windowForSession(action.payload);
+      return {
+        ...state,
+        session: action.payload,
+        // Keep the previous range if the label is unrecognised, so a bad value
+        // can never leave the order without a time.
+        startTime: window ? window.start : state.startTime,
+        endTime: window ? window.end : state.endTime,
+      };
+    }
     case "SET_START_TIME":
       return { ...state, startTime: action.payload };
     case "SET_END_TIME":
